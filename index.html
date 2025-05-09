@@ -1,0 +1,551 @@
+<!-- time tracker app -->
+<script type="module">
+  // Import Vue
+  import { createApp, ref } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js';
+
+  // Initialize the app when the DOM is ready
+  document.addEventListener('DOMContentLoaded', () => {
+
+    createApp({
+      setup() {
+        const entries = ref([]);
+        const newEntry = ref({ task: '', duration: '00:00:00' });
+        const timerState = ref('stopped');
+        const isEditing = ref(false);
+        let timerStartTime = null;
+        let timerInterval = null;
+        let pausedElapsedTime = 0;
+
+        function toggleTimer() {
+          if (timerState.value === 'stopped') {
+            timerStartTime = new Date();
+            newEntry.value.duration = '00:00:00';
+            timerState.value = 'running';
+            pausedElapsedTime = 0;
+            timerInterval = setInterval(updateTimerDisplay, 1000);
+          } else if (timerState.value === 'running') {
+            updateTimerDisplay();
+            timerState.value = 'paused';
+            clearInterval(timerInterval);
+            pausedElapsedTime = new Date() - timerStartTime;
+          } else if (timerState.value === 'paused') {
+            timerStartTime = new Date() - pausedElapsedTime;
+            timerState.value = 'running';
+            timerInterval = setInterval(updateTimerDisplay, 1000);
+          }
+        }
+
+        function stopTimer() {
+          if (timerState.value !== 'stopped') {
+            updateTimerDisplay();
+            timerState.value = 'stopped';
+            clearInterval(timerInterval);
+          }
+        }
+
+        function updateTimerDisplay() {
+          const now = new Date();
+          const diffMs = now - timerStartTime;
+          const diffSecs = Math.floor(diffMs / 1000);
+          const hours = Math.floor(diffSecs / 3600);
+          const minutes = Math.floor((diffSecs % 3600) / 60);
+          const seconds = diffSecs % 60;
+          newEntry.value.duration = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        function parseTimeInput(timeStr) {
+          timeStr = timeStr.trim();
+          const hhmmssRegex = /^([0-9]{1,2}):([0-5][0-9]):([0-5][0-9])$/;
+          if (hhmmssRegex.test(timeStr)) {
+            const [_, hours, minutes, seconds] = hhmmssRegex.exec(timeStr);
+            return { valid: true, formatted: `${String(hours).padStart(2, '0')}:${minutes}:${seconds}` };
+          }
+
+          const hhmmRegex = /^([0-9]{1,2}):([0-5][0-9])$/;
+          if (hhmmRegex.test(timeStr)) {
+            const [_, hours, minutes] = hhmmRegex.exec(timeStr);
+            return { valid: true, formatted: `${String(hours).padStart(2, '0')}:${minutes}:00` };
+          }
+
+          const decimalRegex = /^([0-9]*[.]?[0-9]+)$/;
+          if (decimalRegex.test(timeStr)) {
+            const decimalHours = parseFloat(timeStr);
+            const hours = Math.floor(decimalHours);
+            const minutes = Math.floor((decimalHours - hours) * 60);
+            const seconds = Math.floor(((decimalHours - hours) * 60 - minutes) * 60);
+            return { valid: true, formatted: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` };
+          }
+
+          return { valid: false };
+        }
+
+        function addEntry() {
+          if (timerState.value === 'stopped') {
+            const result = parseTimeInput(newEntry.value.duration);
+            if (!result.valid) {
+              alert('Please enter time in one of these formats:\n- HH:MM:SS\n- HH:MM\n- Decimal hours (e.g., 1.5)');
+              return;
+            }
+            newEntry.value.duration = result.formatted;
+          }
+
+          entries.value.push({ task: newEntry.value.task, duration: newEntry.value.duration });
+          newEntry.value.task = '';
+          newEntry.value.duration = '00:00:00';
+        }
+
+        function toggleEdit() {
+          if (isEditing.value) {
+            const checkboxes = document.querySelectorAll('.delete-checkbox:checked');
+            const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.id.split('-')[1])).sort((a, b) => b - a);
+            indicesToDelete.forEach(index => entries.value.splice(index, 1));
+          }
+
+          isEditing.value = !isEditing.value;
+        }
+
+        function copyToClipboard() {
+          const header = "Task\tDuration";
+          const rows = entries.value.map(entry => `${entry.task}\t${entry.duration}`);
+          const formattedData = [header, ...rows].join('\n');
+
+          navigator.clipboard.writeText(formattedData)
+            .then(() => alert('Data copied to clipboard!'))
+            .catch(err => {
+              console.error('Failed to copy:', err);
+              alert('Failed to copy data.');
+            });
+        }
+
+        return {
+          entries,
+          newEntry,
+          timerState,
+          isEditing,
+          toggleTimer,
+          stopTimer,
+          addEntry,
+          toggleEdit,
+          copyToClipboard
+        };
+      }
+    }).mount('#time-tracker-app');
+
+    const timeTrackerApp = document.querySelector('#time-tracker-app');
+    if (timeTrackerApp) {
+      timeTrackerApp.classList.add('ready');  
+    }
+  });
+</script>
+
+<!-- Time Tracker App Container -->
+<div id="time-tracker-app" class="p-4 max-w-xl mx-auto bg-white shadow rounded">
+  <div class="show-when-ready">
+    <form @submit.prevent="addEntry" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium">
+          <h2>Task Name</h2>
+        </label>
+        <input v-model="newEntry.task" type="text" class="w-full border rounded p-2" required />
+      </div>
+
+      <div class="space-y-1">
+        <div class="flex items-center space-x-2">
+          <button v-if="timerState === 'stopped'" type="button" @click="toggleTimer"
+            class="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded flex items-center" title="Start Timer">
+            <span class="icon">
+              <svg xmlns="http://www.w3.org/2000/svg" class="ionicon" viewBox="0 0 512 512">
+                <circle cx="256" cy="256" r="192" fill="none" stroke="currentColor" stroke-linecap="round"
+                  stroke-linejoin="round" stroke-width="32" />
+                <circle cx="256" cy="256" r="64" fill="none" stroke="currentColor" stroke-linecap="round"
+                  stroke-linejoin="round" stroke-width="32" />
+                <circle cx="256" cy="256" r="12" />
+              </svg>
+            </span>
+          </button>
+
+          <button v-else-if="timerState === 'running'" type="button" @click="toggleTimer"
+            class="px-3 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded flex items-center"
+            title="Pause Timer">
+            <span class="icon">
+              <svg xmlns="http://www.w3.org/2000/svg" class="ionicon" viewBox="0 0 512 512">
+                <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32"
+                  d="M176 96h16v320h-16zM320 96h16v320h-16z" />
+              </svg>
+            </span>
+          </button>
+
+          <button v-else type="button" @click="toggleTimer"
+            class="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded flex items-center" title="Resume Timer">
+            <span class="icon">
+              <svg xmlns="http://www.w3.org/2000/svg" class="ionicon" viewBox="0 0 512 512">
+                <path
+                  d="M112 111v290c0 17.44 17 28.52 31 20.16l247.9-148.37c12.12-7.25 12.12-26.33 0-33.58L143 90.84c-14-8.36-31 2.72-31 20.16z"
+                  fill="none" stroke="currentColor" stroke-miterlimit="10" stroke-width="32" />
+              </svg>
+            </span>
+          </button>
+
+          <button v-if="timerState !== 'stopped'" type="button" @click="stopTimer"
+            class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded flex items-center" title="Stop Timer">
+            <span class="icon">
+              <svg xmlns="http://www.w3.org/2000/svg" class="ionicon" viewBox="0 0 512 512">
+                <path d="M96 96h320v320H96z" fill="none" stroke="currentColor" stroke-linecap="round"
+                  stroke-linejoin="round" stroke-width="32" />
+              </svg>
+            </span>
+          </button>
+
+          <input v-model="newEntry.duration" type="text" class="w-32 border rounded p-2 text-center"
+            placeholder="HH:MM:SS" title="Enter time manually or use the timer"
+            @focus="timerState === 'stopped' ? newEntry.duration = '' : null" />
+          <button type="submit" class="px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded flex items-center"
+            title="Add Entry">
+            <span class="icon">
+              <svg xmlns="http://www.w3.org/2000/svg" class="ionicon" viewBox="0 0 512 512">
+                <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32"
+                  d="M256 112v288M400 256H112" />
+              </svg>
+            </span>
+          </button>
+        </div>
+        <div class="text-sm text-gray-500">
+          Tip: You can use the timer or manually enter time as HH:MM:SS, HH:MM, or decimal hours (e.g., 1.5)
+        </div>
+      </div>
+    </form>
+
+    <div class="flex justify-between items-center mt-6 mb-2">
+      <h2 class="text-lg font-medium">Time Entries</h2>
+      <div id="time-entry-action-buttons-wrap" class="space-x-2">
+        <button @click="toggleEdit" class="px-3 py-1 rounded text-white"
+          :class="isEditing ? 'bg-green-500 hover:bg-green-600' : 'bg-yellow-500 hover:bg-yellow-600'">
+          <span v-if="!isEditing" class="flex items-center">
+            <span class="icon mr-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="ionicon" viewBox="0 0 512 512">
+                <path d="M384 224v184a40 40 0 01-40 40H104a40 40 0 01-40-40V168a40 40 0 0140-40h167.48" fill="none"
+                  stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" />
+                <path
+                  d="M459.94 53.25a16.06 16.06 0 00-22.64 0L424 66.64a10.58 10.58 0 000 15l70.72 70.72a10.58 10.58 0 0015 0l13.38-13.38a16.06 16.06 0 000-22.64zM399.34 90L218.82 270.2a9 9 0 00-2.31 3.93L208.16 299a3.91 3.91 0 004.86 4.86l24.85-8.35a9 9 0 003.93-2.31L422 112.66a9 9 0 000-12.66l-9.95-10a9 9 0 00-12.71 0z" />
+              </svg>
+            </span>
+            Edit
+          </span>
+          <span v-else class="flex items-center">
+            <span class="icon mr-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="ionicon" viewBox="0 0 512 512">
+                <path
+                  d="M380.93 57.37A32 32 0 00358.3 48H94.22A46.21 46.21 0 0048 94.22v323.56A46.21 46.21 0 0094.22 464h323.56A46.36 46.36 0 00464 417.78V153.7a32 32 0 00-9.37-22.63zM256 416a64 64 0 1164-64 63.92 63.92 0 01-64 64zm48-224H112a16 16 0 01-16-16v-64a16 16 0 0116-16h192a16 16 0 0116 16v64a16 16 0 01-16 16z"
+                  fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" />
+              </svg>
+            </span>
+            Save
+          </span>
+        </button>
+        <button @click="copyToClipboard"
+          class="px-3 py-1 rounded text-white bg-blue-500 hover:bg-blue-600 flex items-center">
+          <span class="icon mr-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="ionicon" viewBox="0 0 512 512">
+              <path d="M336 64h32a48 48 0 0148 48v320a48 48 0 01-48 48H144a48 48 0 01-48-48V112a48 48 0 0148-48h32"
+                fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" />
+              <rect x="176" y="32" width="160" height="64" rx="26.13" ry="26.13" fill="none" stroke="currentColor"
+                stroke-linejoin="round" stroke-width="32" />
+            </svg>
+          </span>
+          Copy Data
+        </button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table class="w-full table-auto border-collapse compact-table" :contenteditable="isEditing">
+        <thead>
+          <tr class="bg-gray-100">
+            <th v-if="isEditing" class="p-2 border">Delete?</th>
+            <th class="p-2 border">Task</th>
+            <th class="p-2 border">Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(entry, index) in entries" :key="index" class="hover:bg-gray-50">
+            <td v-if="isEditing" class="p-2 border text-center" contenteditable="false">
+              <input type="checkbox" :id="'delete-' + index" class="delete-checkbox" />
+            </td>
+            <td class="p-2 border">{{ entry.task }}</td>
+            <td class="p-2 border">{{ entry.duration }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Load Ion Icons -->
+<script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+<script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+
+<style>
+  /* Tailwind-inspired simple CSS */
+  .p-4 {
+    padding: 1rem;
+  }
+
+  .mt-2 {
+    margin-top: 0.5rem;
+  }
+
+  .mt-6 {
+    margin-top: 1.5rem;
+  }
+
+  .mb-2 {
+    margin-bottom: 0.5rem;
+  }
+
+  .mr-1 {
+    margin-right: 0.25rem;
+  }
+
+  .w-10 {
+    width: 2.5rem;
+  }
+
+  .justify-between {
+    justify-content: space-between;
+  }
+
+  .max-w-xl {
+    max-width: 36rem;
+  }
+
+  .mx-auto {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .bg-white {
+    background-color: #fff;
+  }
+
+  .shadow {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .rounded {
+    border-radius: 0.5rem;
+  }
+
+  .w-full {
+    width: 100%;
+  }
+
+  .w-32 {
+    width: 8rem;
+  }
+
+  .border {
+    border: 1px solid #ccc;
+  }
+
+  .table-auto {
+    table-layout: auto;
+  }
+
+  .border-collapse {
+    border-collapse: collapse;
+  }
+
+  .space-y-4>*+* {
+    margin-top: 1rem;
+  }
+
+  .flex {
+    display: flex;
+  }
+
+  .items-center {
+    align-items: center;
+  }
+
+  .space-x-2>*+* {
+    margin-left: 0.5rem;
+  }
+
+  .text-sm {
+    font-size: 0.875rem;
+  }
+
+  .font-medium {
+    font-weight: 500;
+  }
+
+  .text-center {
+    text-align: center;
+  }
+
+  .text-white {
+    color: white;
+  }
+
+  .text-yellow-500 {
+    color: #f59e0b;
+  }
+
+  .text-green-500 {
+    color: #10b981;
+  }
+
+  .text-red-500 {
+    color: #ef4444;
+  }
+
+  .text-gray-500 {
+    color: #6b7280;
+  }
+
+  .text-lg {
+    font-size: 1.25rem;
+  }
+
+  .space-y-1>*+* {
+    margin-top: 0.25rem;
+  }
+
+  .icon {
+    display: inline-flex;
+    max-width: 1.25rem;
+    max-height: 1.25rem;
+  }
+
+  .ionicon {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Set maximum size for action icons in table rows 
+  td.text-center button .ionicon {
+    max-width: 1.25rem;
+    max-height: 1.25rem;
+  } */
+
+  button.invisible.group-hover\:visible {
+    background: none;
+  }
+
+  .bg-yellow-500 {
+    background-color: #f59e0b;
+  }
+
+  .bg-yellow-600 {
+    background-color: #d97706;
+  }
+
+  .bg-red-500 {
+    background-color: #ef4444;
+  }
+
+  .bg-red-600 {
+    background-color: #dc2626;
+  }
+
+  .hover\:bg-yellow-600:hover {
+    background-color: #d97706;
+  }
+
+  .hover\:bg-red-600:hover {
+    background-color: #dc2626;
+  }
+
+  .bg-blue-500 {
+    background-color: #3b82f6;
+  }
+
+  .bg-blue-600 {
+    background-color: #2563eb;
+  }
+
+  .bg-green-500 {
+    background-color: #22c55e;
+  }
+
+  .bg-green-600 {
+    background-color: #16a34a;
+  }
+
+  .bg-gray-100 {
+    background-color: #f3f4f6;
+  }
+
+  .hover\:bg-gray-50:hover {
+    background-color: #f9fafb;
+  }
+
+  .hover\:bg-blue-600:hover {
+    background-color: #2563eb;
+  }
+
+  .hover\:bg-green-600:hover {
+    background-color: #16a34a;
+  }
+
+  .group:hover .group-hover\:visible {
+    visibility: visible;
+  }
+
+  .group-hover\:visible {
+    visibility: hidden;
+  }
+
+  .p-2 {
+    padding: 0.5rem;
+  }
+
+  .p-1 {
+    padding: 0.25rem;
+  }
+
+  .invisible {
+    visibility: hidden;
+  }
+
+  .visible {
+    visibility: visible;
+  }
+
+  /* Compact table styles */
+  .compact-table td,
+  .compact-table th {
+    padding: 0.25rem 0.5rem;
+  }
+
+  .compact-table input {
+    padding: 0.125rem 0.25rem;
+  }
+
+  /* Table container styles */
+  .table-container {
+    position: relative;
+  }
+
+  #time-entry-action-buttons-wrap {
+    display: flex;
+    width: fit-content;
+  }
+
+  .show-when-ready {
+    display: none;
+  }
+
+  .ready .show-when-ready {
+    display: block;
+  }
+
+  #time-tracker-app {
+    background: #efefef;
+    min-height: 402px;
+  }
+
+  #time-tracker-app.ready {
+    background: #ffffff;
+  }
+</style>
